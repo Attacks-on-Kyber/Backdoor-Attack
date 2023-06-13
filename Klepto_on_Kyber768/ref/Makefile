@@ -31,7 +31,7 @@ all: \
   test_kex1024-90s \
   test_vectors512-90s \
   test_vectors768-90s \
-  test_vectors1024-90s
+  test_vectors1024-90s 
 
 speed: \
   test_speed512 \

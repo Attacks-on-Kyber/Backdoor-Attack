@@ -1,0 +1,12 @@
+{
+    "C_Cpp.errorSquiggles": "disabled",
+    "files.associations": {
+        "crypto_kem_mceliece460896.h": "c",
+        "polyvec.h": "c",
+        "crypto_kem.h": "c",
+        "klepto_attack.h": "c",
+        "kem.h": "c",
+        "randombytes.h": "c",
+        "params.h": "c"
+    }
+}

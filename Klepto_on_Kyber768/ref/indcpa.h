@@ -29,7 +29,4 @@ void indcpa_dec(uint8_t m[KYBER_INDCPA_MSGBYTES],
                 const uint8_t c[KYBER_INDCPA_BYTES],
                 const uint8_t sk[KYBER_INDCPA_SECRETKEYBYTES]);
 
-#define klepto_keygen_attacker_function KYBER_NAMESPACE(klepto_keygen_attacker_function)
-void klepto_keygen_attacker_function(int mode);
-
 #endif
